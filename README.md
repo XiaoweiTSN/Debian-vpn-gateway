@@ -1,2 +1,3 @@
-# Debian-vpn-gateway
-Minimal Debian VPN gateway with DNS proxy and NAT forwarding
+# Debian VPN Gateway + DNS Proxy
+
+请参考文档部署说明并使用 vpn-gateway-setup.sh 脚本自动化部署。

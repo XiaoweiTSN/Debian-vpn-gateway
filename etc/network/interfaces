@@ -1,0 +1,14 @@
+auto lo
+iface lo inet loopback
+
+auto ens33
+iface ens33 inet static
+    address 192.168.137.100
+    netmask 255.255.255.0
+    gateway 192.168.137.1
+    dns-nameservers 26.26.26.53
+
+auto ens37
+iface ens37 inet static
+    address 192.168.0.123
+    netmask 255.255.255.0
