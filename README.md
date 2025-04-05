@@ -37,6 +37,7 @@ Debian 虚拟机（双网卡）
 
 ### 1. 设置静态 IP
 
+#### 如果未安装NetworkManager
 编辑 `/etc/network/interfaces`：
 
 ```ini
@@ -54,6 +55,40 @@ auto ens37
 iface ens37 inet static
     address 192.168.0.123
     netmask 255.255.255.0
+```
+
+#### 如果已安装NetworkManager
+
+删除旧有DHCP配置
+```bash
+nmcli connection show
+```
+
+```bash
+nmcli connection delete "Wired connection 1"
+nmcli connection delete "Wired connection 2"
+```
+
+创建静态IP
+
+```bash
+nmcli connection add type ethernet con-name lan ifname ens37 ipv4.method manual ipv4.addresses 192.168.0.123/24
+nmcli connection add type ethernet con-name vpnout ifname ens33 ipv4.method manual \
+  ipv4.addresses 192.168.137.100/24 \
+  ipv4.gateway 192.168.137.1 \
+  ipv4.dns 26.26.26.53
+```
+
+启用连接
+```bash
+nmcli connection up lan
+nmcli connection up vpnout
+```
+
+查看服务状态
+```bash
+nmcli connection show
+ifconfig
 ```
 
 ### 2. 开启 IP 转发
