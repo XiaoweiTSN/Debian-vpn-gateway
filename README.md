@@ -35,6 +35,24 @@ Debian 虚拟机（双网卡）
 
 ## 🔧 安装步骤
 
+### 0.环境配置
+
+#### 0.1 报错修复
+```bash
+cxw@DebianVPN:~$ sudo ls
+[sudo] password for cxw: 
+cxw is not in the sudoers file.
+```
+首先进变为root用户
+```bash
+su
+```
+然后赋予权限
+```bash
+usermod -aG sudo cxw
+```
+重启系统
+
 ### 1. 设置静态 IP
 
 #### 如果未安装NetworkManager
