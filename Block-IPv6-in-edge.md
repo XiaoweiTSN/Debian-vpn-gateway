@@ -10,9 +10,30 @@
 
 ---
 
+## ⚠️ 为什么需要同时阻止 TCP 和 UDP？
+
+现代浏览器（Edge、Chrome）支持 **QUIC 协议**（HTTP/3 的底层传输协议），它基于 **UDP** 而非传统的 TCP。
+
+如果只阻止 TCP：
+
+- 普通 HTTPS 连接（TCP 443）会被阻止 ✅
+- QUIC 连接（UDP 443）会绕过防火墙规则 ❌
+
+因此必须 **同时阻止 TCP 和 UDP**，才能完全阻止 Edge 的 IPv6 连接。
+
+> 💡 你也可以在 Edge 中关闭 QUIC：访问 `edge://flags/#enable-quic` 设为 Disabled。但防火墙层面同时阻止两种协议是更可靠的做法。
+
+---
+
 ## ✅ 方法概述
 
-我们通过 **Windows Defender 高级防火墙 + PowerShell** 精确设置三条规则，屏蔽 Edge 对常用 IPv6 地址段的访问。
+通过 **Windows Defender 高级防火墙 + PowerShell** 设置 6 条规则，分别阻止 Edge 对三类 IPv6 地址段的 TCP 和 UDP 访问。
+
+| 地址段      | 说明                      | 协议      |
+| ----------- | ------------------------- | --------- |
+| `2000::/3`  | 全球单播地址（公网 IPv6） | TCP + UDP |
+| `fe80::/10` | 链路本地地址              | TCP + UDP |
+| `fc00::/7`  | 唯一本地地址（ULA）       | TCP + UDP |
 
 ---
 
@@ -24,11 +45,11 @@
 
 ---
 
-### 2. 执行以下 3 条命令（分别添加规则）
+### 2. 执行以下 6 条命令
 
 ```powershell
-# 屏蔽 Edge 使用公网 IPv6
-New-NetFirewallRule -DisplayName "Block Edge IPv6 - global" `
+# 屏蔽 Edge 使用公网 IPv6 (TCP)
+New-NetFirewallRule -DisplayName "Block Edge IPv6 - global TCP" `
   -Program "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" `
   -Direction Outbound `
   -Action Block `
@@ -36,8 +57,17 @@ New-NetFirewallRule -DisplayName "Block Edge IPv6 - global" `
   -RemoteAddress "2000::/3" `
   -Profile Any
 
-# 屏蔽 Edge 使用链路本地地址（如 fe80::1）
-New-NetFirewallRule -DisplayName "Block Edge IPv6 - link local" `
+# 屏蔽 Edge 使用公网 IPv6 (UDP/QUIC)
+New-NetFirewallRule -DisplayName "Block Edge IPv6 - global UDP" `
+  -Program "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" `
+  -Direction Outbound `
+  -Action Block `
+  -Protocol UDP `
+  -RemoteAddress "2000::/3" `
+  -Profile Any
+
+# 屏蔽 Edge 使用链路本地地址 (TCP)
+New-NetFirewallRule -DisplayName "Block Edge IPv6 - link local TCP" `
   -Program "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" `
   -Direction Outbound `
   -Action Block `
@@ -45,12 +75,30 @@ New-NetFirewallRule -DisplayName "Block Edge IPv6 - link local" `
   -RemoteAddress "fe80::/10" `
   -Profile Any
 
-# 屏蔽 Edge 使用唯一本地地址（如 fc00::/7）
-New-NetFirewallRule -DisplayName "Block Edge IPv6 - ULA" `
+# 屏蔽 Edge 使用链路本地地址 (UDP/QUIC)
+New-NetFirewallRule -DisplayName "Block Edge IPv6 - link local UDP" `
+  -Program "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" `
+  -Direction Outbound `
+  -Action Block `
+  -Protocol UDP `
+  -RemoteAddress "fe80::/10" `
+  -Profile Any
+
+# 屏蔽 Edge 使用唯一本地地址 (TCP)
+New-NetFirewallRule -DisplayName "Block Edge IPv6 - ULA TCP" `
   -Program "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" `
   -Direction Outbound `
   -Action Block `
   -Protocol TCP `
+  -RemoteAddress "fc00::/7" `
+  -Profile Any
+
+# 屏蔽 Edge 使用唯一本地地址 (UDP/QUIC)
+New-NetFirewallRule -DisplayName "Block Edge IPv6 - ULA UDP" `
+  -Program "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" `
+  -Direction Outbound `
+  -Action Block `
+  -Protocol UDP `
   -RemoteAddress "fc00::/7" `
   -Profile Any
 ````
@@ -60,15 +108,27 @@ New-NetFirewallRule -DisplayName "Block Edge IPv6 - ULA" `
 ### 3. 验证规则是否创建成功
 
 ```powershell
-Get-NetFirewallRule -DisplayName "Block Edge IPv6*" | Get-NetFirewallAddressFilter
+Get-NetFirewallRule -DisplayName "Block Edge IPv6*" | 
+  ForEach-Object { 
+    [PSCustomObject]@{
+      Name = $_.DisplayName
+      Protocol = ($_ | Get-NetFirewallPortFilter).Protocol
+      RemoteAddr = ($_ | Get-NetFirewallAddressFilter).RemoteAddress
+    }
+  } | Format-Table -AutoSize
 ```
 
-应输出：
+应输出 6 条规则，TCP 和 UDP 各 3 条：
 
 ```
-RemoteAddress : 2000::/3
-RemoteAddress : fe80::/10
-RemoteAddress : fc00::/7
+Name                                  Protocol RemoteAddr
+----                                  -------- ----------
+Block Edge IPv6 - global TCP          TCP      2000::/3
+Block Edge IPv6 - global UDP          UDP      2000::/3
+Block Edge IPv6 - link local TCP      TCP      fe80::/10
+Block Edge IPv6 - link local UDP      UDP      fe80::/10
+Block Edge IPv6 - ULA TCP             TCP      fc00::/7
+Block Edge IPv6 - ULA UDP             UDP      fc00::/7
 ```
 
 ---
@@ -101,11 +161,18 @@ Your browser has no IPv6 connectivity
 如果将来想恢复 IPv6 使用，执行：
 
 ```powershell
-Remove-NetFirewallRule -DisplayName "Block Edge IPv6 - global"
-Remove-NetFirewallRule -DisplayName "Block Edge IPv6 - link local"
-Remove-NetFirewallRule -DisplayName "Block Edge IPv6 - ULA"
+Remove-NetFirewallRule -DisplayName "Block Edge IPv6 - global TCP"
+Remove-NetFirewallRule -DisplayName "Block Edge IPv6 - global UDP"
+Remove-NetFirewallRule -DisplayName "Block Edge IPv6 - link local TCP"
+Remove-NetFirewallRule -DisplayName "Block Edge IPv6 - link local UDP"
+Remove-NetFirewallRule -DisplayName "Block Edge IPv6 - ULA TCP"
+Remove-NetFirewallRule -DisplayName "Block Edge IPv6 - ULA UDP"
 ```
+或使用通配符一次性删除：
 
+```powershell
+Remove-NetFirewallRule -DisplayName "Block Edge IPv6*"
+```
 
 
 
